@@ -13,13 +13,15 @@ struct ParticleType {
 void MoveParticles(const int nParticles, struct ParticleType* const particle, const float dt) {
 
   // Loop over particles that experience force
-  for (int i = 0; i < nParticles; i++) { 
+  int i;
+  for (i = 0; i < nParticles; i++) { 
 
     // Components of the gravity force on particle i
     float Fx = 0, Fy = 0, Fz = 0; 
       
     // Loop over particles that exert force
-    for (int j = 0; j < nParticles; j++) { 
+    int j;
+    for (j = 0; j < nParticles; j++) { 
       // No self interaction
       if (i != j) {
           // Avoid singularity and interaction with self
@@ -48,7 +50,7 @@ void MoveParticles(const int nParticles, struct ParticleType* const particle, co
 
   // Move particles according to their velocities
   // O(N) work, so using a serial loop
-  for (int i = 0 ; i < nParticles; i++) { 
+  for (i = 0 ; i < nParticles; i++) { 
     particle[i].x  += particle[i].vx*dt;
     particle[i].y  += particle[i].vy*dt;
     particle[i].z  += particle[i].vz*dt;
@@ -107,7 +109,8 @@ int main(const int argc, const char** argv)
   double rate = 0, dRate = 0; // Benchmarking data
   const int skipSteps = 3; // Skip first iteration (warm-up)
   printf("\033[1m%5s %10s %10s %8s\033[0m\n", "Step", "Time, s", "Interact/s", "GFLOP/s"); fflush(stdout);
-  for (int step = 1; step <= nSteps; step++) {
+  int step;
+  for (step = 1; step <= nSteps; step++) {
 
     const double tStart = omp_get_wtime(); // Start timing
     MoveParticles(nParticles, particle, dt);
@@ -137,6 +140,8 @@ int main(const int argc, const char** argv)
   printf("-----------------------------------------------------\n");
   printf("* - warm-up, not included in average\n\n");
   free(particle);
+
+  return 0;
 }
 
 

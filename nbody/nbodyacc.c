@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h> // drand48
-#include <omp.h>
+#include <openacc.h>
 
 //#define DUMP
 
@@ -11,49 +11,53 @@ struct ParticleType {
 };
 
 void MoveParticles(const int nParticles, struct ParticleType* const particle, const float dt) {
+  // Data copied into the GPU will stay within the GPU in this block
+  //TODO: préciser que les données doivent être copiées sur le GPU tout du long
+  #pragma acc data copy(particle[0:nParticles])
+  {
+    // Loop over particles that experience force
+    #pragma acc parallel loop
+    for (int i = 0; i < nParticles; i++) { 
 
-  // Loop over particles that experience force
-  #pragma acc parallel loop
-  for (int i = 0; i < nParticles; i++) { 
+      // Components of the gravity force on particle i
+      float Fx = 0, Fy = 0, Fz = 0; 
+        
+      // Loop over particles that exert force
+      #pragma acc parallel loop reduction(+:Fx) reduction(+:Fy) reduction(+:Fz)
+      for (int j = 0; j < nParticles; j++) { 
+        // No self interaction
+        if (i != j) {
+          // Avoid singularity and interaction with self
+          const float softening = 1e-20;
 
-    // Components of the gravity force on particle i
-    float Fx = 0, Fy = 0, Fz = 0; 
-      
-    // Loop over particles that exert force
-    #pragma acc parallel loop reduction(+:Fx) reduction(+:Fy) reduction(+:Fz)
-    for (int j = 0; j < nParticles; j++) { 
-      // No self interaction
-      if (i != j) {
-        // Avoid singularity and interaction with self
-        const float softening = 1e-20;
-
-        // Newton's law of universal gravity
-        const float dx = particle[j].x - particle[i].x;
-        const float dy = particle[j].y - particle[i].y;
-        const float dz = particle[j].z - particle[i].z;
-        const float drSquared  = dx*dx + dy*dy + dz*dz + softening;
-        const float drPower32  = pow(drSquared, 3.0/2.0);
-          
-        // Calculate the net force
-        Fx += dx / drPower32;  
-        Fy += dy / drPower32;  
-        Fz += dz / drPower32;
+          // Newton's law of universal gravity
+          const float dx = particle[j].x - particle[i].x;
+          const float dy = particle[j].y - particle[i].y;
+          const float dz = particle[j].z - particle[i].z;
+          const float drSquared  = dx*dx + dy*dy + dz*dz + softening;
+          const float drPower32  = pow(drSquared, 3.0/2.0);
+            
+          // Calculate the net force
+          Fx += dx / drPower32;  
+          Fy += dy / drPower32;  
+          Fz += dz / drPower32;
+        }
       }
+
+      // Accelerate particles in response to the gravitational force
+      particle[i].vx += dt*Fx; 
+      particle[i].vy += dt*Fy; 
+      particle[i].vz += dt*Fz;
     }
 
-    // Accelerate particles in response to the gravitational force
-    particle[i].vx += dt*Fx; 
-    particle[i].vy += dt*Fy; 
-    particle[i].vz += dt*Fz;
-  }
-
-  // Move particles according to their velocities
-  // O(N) work, so using a serial loop
-  #pragma acc parallel loop
-  for (int i = 0 ; i < nParticles; i++) { 
-    particle[i].x  += particle[i].vx*dt;
-    particle[i].y  += particle[i].vy*dt;
-    particle[i].z  += particle[i].vz*dt;
+    // Move particles according to their velocities
+    // O(N) work, so using a serial loop
+    #pragma acc parallel loop
+    for (int i = 0 ; i < nParticles; i++) { 
+      particle[i].x  += particle[i].vx*dt;
+      particle[i].y  += particle[i].vy*dt;
+      particle[i].z  += particle[i].vz*dt;
+    }
   }
 }
 
