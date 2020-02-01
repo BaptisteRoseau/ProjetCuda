@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdlib.h> // drand48
 #include <openacc.h>
+#include <omp.h>
 
 //#define DUMP
 
@@ -11,19 +12,17 @@ struct ParticleType {
 };
 
 void MoveParticles(const int nParticles, struct ParticleType* const particle, const float dt) {
-  // Data copied into the GPU will stay within the GPU in this block
-  //TODO: préciser que les données doivent être copiées sur le GPU tout du long
-  #pragma acc data copy(particle[0:nParticles])
+  // Loop over particles that experience force
+  #pragma acc parallel
   {
-    // Loop over particles that experience force
-    #pragma acc parallel loop
+    #pragma acc loop
     for (int i = 0; i < nParticles; i++) { 
 
       // Components of the gravity force on particle i
       float Fx = 0, Fy = 0, Fz = 0; 
         
       // Loop over particles that exert force
-      #pragma acc parallel loop reduction(+:Fx) reduction(+:Fy) reduction(+:Fz)
+      #pragma acc loop reduction(+:Fx) reduction(+:Fy) reduction(+:Fz)
       for (int j = 0; j < nParticles; j++) { 
         // No self interaction
         if (i != j) {
@@ -52,7 +51,7 @@ void MoveParticles(const int nParticles, struct ParticleType* const particle, co
 
     // Move particles according to their velocities
     // O(N) work, so using a serial loop
-    #pragma acc parallel loop
+    #pragma acc loop
     for (int i = 0 ; i < nParticles; i++) { 
       particle[i].x  += particle[i].vx*dt;
       particle[i].y  += particle[i].vy*dt;
@@ -107,34 +106,39 @@ int main(const int argc, const char** argv)
   }
   
   // Perform benchmark
-  printf("\nPropagating %d particles using 1 thread...\n\n", 
+  printf("\nPropagating %d particles using OpenACC...\n\n", 
 	 nParticles
 	 );
   double rate = 0, dRate = 0; // Benchmarking data
   const int skipSteps = 3; // Skip first iteration (warm-up)
   printf("\033[1m%5s %10s %10s %8s\033[0m\n", "Step", "Time, s", "Interact/s", "GFLOP/s"); fflush(stdout);
-  for (int step = 1; step <= nSteps; step++) {
+    // Data copied into the GPU will stay within the GPU in this block
+  #pragma acc data copy(particle[0:nParticles])
+  {
+    for (int step = 1; step <= nSteps; step++) {
 
-    const double tStart = omp_get_wtime(); // Start timing
-    MoveParticles(nParticles, particle, dt);
-    const double tEnd = omp_get_wtime(); // End timing
+      const double tStart = omp_get_wtime(); // Start timing
+      MoveParticles(nParticles, particle, dt);
+      const double tEnd = omp_get_wtime(); // End timing
 
-    const float HztoInts   = ((float)nParticles)*((float)(nParticles-1)) ;
-    const float HztoGFLOPs = 20.0*1e-9*((float)(nParticles))*((float)(nParticles-1));
+      const float HztoInts   = ((float)nParticles)*((float)(nParticles-1)) ;
+      const float HztoGFLOPs = 20.0*1e-9*((float)(nParticles))*((float)(nParticles-1));
 
-    if (step > skipSteps) { // Collect statistics
-      rate  += HztoGFLOPs/(tEnd - tStart); 
-      dRate += HztoGFLOPs*HztoGFLOPs/((tEnd - tStart)*(tEnd-tStart)); 
-    }
+      if (step > skipSteps) { // Collect statistics
+        rate  += HztoGFLOPs/(tEnd - tStart); 
+        dRate += HztoGFLOPs*HztoGFLOPs/((tEnd - tStart)*(tEnd-tStart)); 
+      }
 
-    printf("%5d %10.3e %10.3e %8.1f %s\n", 
-	   step, (tEnd-tStart), HztoInts/(tEnd-tStart), HztoGFLOPs/(tEnd-tStart), (step<=skipSteps?"*":""));
-    fflush(stdout);
+      printf("%5d %10.3e %10.3e %8.1f %s\n", 
+      step, (tEnd-tStart), HztoInts/(tEnd-tStart), HztoGFLOPs/(tEnd-tStart), (step<=skipSteps?"*":""));
+      fflush(stdout);
 
 #ifdef DUMP
-    dump(step, nParticles, particle);
+      dump(step, nParticles, particle);
 #endif
+    }
   }
+
   rate/=(double)(nSteps-skipSteps); 
   dRate=sqrt(dRate/(double)(nSteps-skipSteps)-rate*rate);
   printf("-----------------------------------------------------\n");

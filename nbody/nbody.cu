@@ -3,79 +3,27 @@
 #include <stdlib.h> // drand48
 #include <sys/time.h>
 #include <cuda.h>
+#include <omp.h>
 
 //#define DUMP
 
-//TODO: Checker les retours d'erreur
-//TODO: Suivre le sujet --"
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess) 
+   {
+    fprintf(stderr,"GPUassert: %s in file %s: %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
 
 struct ParticleType { 
-  float *x, *y, *z;
-  float *vx, *vy, *vz; 
-  size_t nParticles;
+  float x, y, z;
+  float vx, vy, vz; 
 };
 
-float get_time(){
-    struct timeval tv;
-    struct timezone tz;
-    gettimeofday(&tv, &tz);
-    return tv.tv_usec;
-}
-
-void allocParticleType(ParticleType *p, size_t amount){
-  p->nParticles = amount;
-  p->x =  (float*) malloc(amount*sizeof(float));
-  p->y =  (float*) malloc(amount*sizeof(float));
-  p->z =  (float*) malloc(amount*sizeof(float));
-  p->vx = (float*) malloc(amount*sizeof(float));
-  p->vy = (float*) malloc(amount*sizeof(float));
-  p->vz = (float*) malloc(amount*sizeof(float));
-}
-
-void freeParticleType(ParticleType *p){
-  free(p->x);
-  free(p->y);
-  free(p->z);
-  free(p->vx);
-  free(p->vy);
-  free(p->vz);
-}
-
-void cudaMallocParticleType(ParticleType *pDevice, size_t amount){
-  cudaMalloc((void**)&pDevice, sizeof(ParticleType));
-  //size_t tmp = amount;
-  //cudaMemcpy(&pDevice->nParticles, &tmp, sizeof(size_t), cudaMemcpyHostToDevice);
-  cudaMalloc((void**)&pDevice->x, amount*sizeof(float));
-  cudaMalloc((void**)&pDevice->y, amount*sizeof(float));
-  cudaMalloc((void**)&pDevice->z, amount*sizeof(float));
-  cudaMalloc((void**)&pDevice->vx, amount*sizeof(float));
-  cudaMalloc((void**)&pDevice->vy, amount*sizeof(float));
-  cudaMalloc((void**)&pDevice->vz, amount*sizeof(float));
-}
-
-void cudaFreeParticleType(ParticleType *pDevice){
-  cudaFree(pDevice->x);
-  cudaFree(pDevice->y);
-  cudaFree(pDevice->z);
-  cudaFree(pDevice->vx);
-  cudaFree(pDevice->vy);
-  cudaFree(pDevice->vz);
-  cudaFree(pDevice);
-}
-
-void cudaMemcpyParticleType(ParticleType *pDevice, const ParticleType *pHost, cudaMemcpyKind kind){
-  cudaMemcpy(pDevice->x, pHost->x, pHost->nParticles*sizeof(float), kind);
-  cudaMemcpy(pDevice->y, pHost->y, pHost->nParticles*sizeof(float), kind);
-  cudaMemcpy(pDevice->z, pHost->z, pHost->nParticles*sizeof(float), kind);
-  cudaMemcpy(pDevice->vx, pHost->vx, pHost->nParticles*sizeof(float), kind);
-  cudaMemcpy(pDevice->vy, pHost->vy, pHost->nParticles*sizeof(float), kind);
-  cudaMemcpy(pDevice->vz, pHost->vz, pHost->nParticles*sizeof(float), kind);
-}
-
-//TODO: Improve this kernel
 __global__
-void cuMoveParticles(struct ParticleType const *particles, const float dt) {
-  const int nParticles = particles->nParticles;
+void cuMoveParticles(const int nParticles, struct ParticleType *particle, const float dt) {
   int tid = blockIdx.x*blockDim.x + threadIdx.x;
   int i = tid;
   while (i < nParticles){
@@ -83,16 +31,17 @@ void cuMoveParticles(struct ParticleType const *particles, const float dt) {
     float Fx = 0, Fy = 0, Fz = 0; 
       
     // Loop over particles that exert force
-    for (int j = 0; j < nParticles; j++) { 
+    int j;
+    for (j = 0; j < nParticles; j++) { 
       // No self interaction
       if (i != j) {
           // Avoid singularity and interaction with self
           const float softening = 1e-20;
 
           // Newton's law of universal gravity
-          const float dx = particles->x[j] - particles->x[i];
-          const float dy = particles->y[j] - particles->y[i];
-          const float dz = particles->z[j] - particles->z[i];
+          const float dx = particle[j].x - particle[i].x;
+          const float dy = particle[j].y - particle[i].y;
+          const float dz = particle[j].z - particle[i].z;
           const float drSquared  = dx*dx + dy*dy + dz*dz + softening;
           const float drPower32  = pow(drSquared, 3.0/2.0);
             
@@ -104,34 +53,29 @@ void cuMoveParticles(struct ParticleType const *particles, const float dt) {
     }
 
     // Accelerate particles in response to the gravitational force
-    particles->vx[i] += dt*Fx; 
-    particles->vy[i] += dt*Fy; 
-    particles->vz[i] += dt*Fz;
+    particle[i].vx += dt*Fx;
+    particle[i].vy += dt*Fy;
+    particle[i].vz += dt*Fz;
 
     // Getting next particle for current thread
     i += blockDim.x*gridDim.x;
   }
-}
 
-__global__
-void cuUpdateParticles(struct ParticleType const *particles, const float dt){
-  // Move particles according to their velocities
-  // O(N) work, so using a serial loop
-  const int nParticles = particles->nParticles;
-  int tid = blockIdx.x*blockDim.x + threadIdx.x;
-  int i = tid;
+  // Waiting for all the particles to be moved
+  __syncthreads();
+
+  // Updating particles position
+  i = tid;
   while (i < nParticles){
-    particles->x[i] += particles->vx[i]*dt;
-    particles->y[i] += particles->vy[i]*dt;
-    particles->z[i] += particles->vz[i]*dt;
+    particle[i].x += particle[i].vx*dt;
+    particle[i].y += particle[i].vy*dt;
+    particle[i].z += particle[i].vz*dt;
     i += blockDim.x*gridDim.x;
   }
 }
 
-void dump(int iter, struct ParticleType *particles)
+void dump(int iter, int nParticles, struct ParticleType* particle)
 {
-    const int nParticles = particles->nParticles;
-
     char filename[64];
     snprintf(filename, 64, "output_%d.txt", iter);
 
@@ -142,8 +86,8 @@ void dump(int iter, struct ParticleType *particles)
     for (i = 0; i < nParticles; i++)
     {
         fprintf(f, "%e %e %e %e %e %e\n",
-                   particles->x[i], particles->y[i], particles->z[i],
-		   particles->vx[i], particles->vy[i], particles->vz[i]);
+                   particle[i].x, particle[i].y, particle[i].z,
+		   particle[i].vx, particle[i].vy, particle[i].vz);
     }
 
     fclose(f);
@@ -159,84 +103,66 @@ int main(const int argc, const char** argv)
   // Particle propagation time step
   const float dt = 0.0005f;
 
-  struct ParticleType *particles = (struct ParticleType *) malloc(sizeof(ParticleType));
-  allocParticleType(particles, nParticles);
-  
+  struct ParticleType* particle = (struct ParticleType*) malloc(nParticles*sizeof(struct ParticleType));
+
   // Initialize random number generator and particles
   srand48(0x2020);
-  
+
   int i;
   for (i = 0; i < nParticles; i++)
   {
-    particles->x[i] =  2.0*drand48() - 1.0;
-    particles->y[i] =  2.0*drand48() - 1.0;
-    particles->z[i] =  2.0*drand48() - 1.0;
-    particles->vx[i] = 2.0*drand48() - 1.0;
-    particles->vy[i] = 2.0*drand48() - 1.0;
-    particles->vz[i] = 2.0*drand48() - 1.0;
+     particle[i].x =  2.0*drand48() - 1.0;
+     particle[i].y =  2.0*drand48() - 1.0;
+     particle[i].z =  2.0*drand48() - 1.0;
+     particle[i].vx = 2.0*drand48() - 1.0;
+     particle[i].vy = 2.0*drand48() - 1.0;
+     particle[i].vz = 2.0*drand48() - 1.0;
   }
   
-  // Allocating data onto GPU
-  struct ParticleType *cuParticles;
-  //cudaMallocParticleType(cuParticles, nParticles);
-  
-  //--- CUDA MALLOC BEGIN
-  cudaMalloc(&cuParticles, sizeof(ParticleType));
-  //size_t *tmp;
-  //*tmp = nParticles;
-  //cudaMemcpy(&cuParticles->nParticles, &tmp, sizeof(size_t), cudaMemcpyHostToDevice);
-  cudaMalloc(&cuParticles->x, nParticles*sizeof(float));
-  cudaMalloc(&cuParticles->y, nParticles*sizeof(float));
-  cudaMalloc(&cuParticles->z, nParticles*sizeof(float));
-  cudaMalloc(&cuParticles->vx, nParticles*sizeof(float));
-  cudaMalloc(&cuParticles->vy, nParticles*sizeof(float));
-  cudaMalloc(&cuParticles->vz, nParticles*sizeof(float));
-  //--- CUDA MALLOC END
-
-
-  cudaMemcpyParticleType(cuParticles, particles, cudaMemcpyHostToDevice);
-
-  // Perform benchmark
-  printf("\nPropagating %d particles using 1 thread...\n\n", 
-	 nParticles
-	 );
-  double rate = 0, dRate = 0; // Benchmarking data
-  const int skipSteps = 3; // Skip first iteration (warm-up)
-  printf("\033[1m%5s %10s %10s %8s\033[0m\n", "Step", "Time, s", "Interact/s", "GFLOP/s"); fflush(stdout);
+  // Copying particles into the GPU
+  struct ParticleType* cuParticles;
+  gpuErrchk( cudaMalloc((void**)&cuParticles, nParticles*sizeof(ParticleType)) );
+  gpuErrchk( cudaMemcpy(cuParticles, particle, nParticles*sizeof(ParticleType), cudaMemcpyHostToDevice) );
 
 
   // Getting max occupancy
   int blockSize, minGridSize, gridSize;
-  cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSize, cuMoveParticles, 0, nParticles); 
+  gpuErrchk( cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSize, cuMoveParticles, 0, nParticles) ); 
   gridSize = (nParticles + blockSize - 1) / blockSize; 
 
-  // Main loop
-  for (int step = 1; step <= nSteps; step++) {
+  // Perform benchmark
+  printf("\nPropagating %d particles using %d grids of %d thread...\n\n", 
+	 nParticles, gridSize, blockSize
+	 );
+  double rate = 0, dRate = 0; // Benchmarking data
+  const int skipSteps = 3; // Skip first iteration (warm-up)
+  printf("\033[1m%5s %10s %10s %8s\033[0m\n", "Step", "Time, s", "Interact/s", "GFLOP/s"); fflush(stdout);
+  int step;
+  for (step = 1; step <= nSteps; step++) {
 
-    const double tStart = get_time(); // Start timing
-    cuMoveParticles<<< gridSize, blockSize >>>(cuParticles, dt);
-    cuUpdateParticles<<< gridSize, blockSize >>>(cuParticles, dt);
-    const double tEnd = get_time(); // End timing
+    const double tStart = omp_get_wtime(); // Start timing
+    cuMoveParticles<<< gridSize, blockSize >>>(nParticles, cuParticles, dt);
+    cudaDeviceSynchronize();
+    const double tEnd = omp_get_wtime(); // End timing
+    const double tElapsed = (tEnd - tStart); // seconds
 
     const float HztoInts   = ((float)nParticles)*((float)(nParticles-1)) ;
     const float HztoGFLOPs = 20.0*1e-9*((float)(nParticles))*((float)(nParticles-1));
 
     if (step > skipSteps) { // Collect statistics
-      rate  += HztoGFLOPs/(tEnd - tStart); 
-      dRate += HztoGFLOPs*HztoGFLOPs/((tEnd - tStart)*(tEnd-tStart)); 
+      rate  += HztoGFLOPs/tElapsed; 
+      dRate += HztoGFLOPs*HztoGFLOPs/(tElapsed*tElapsed); 
     }
 
     printf("%5d %10.3e %10.3e %8.1f %s\n", 
-	   step, (tEnd-tStart), HztoInts/(tEnd-tStart), HztoGFLOPs/(tEnd-tStart), (step<=skipSteps?"*":""));
+	   step, tElapsed, HztoInts/tElapsed, HztoGFLOPs/tElapsed, (step<=skipSteps?"*":""));
     fflush(stdout);
 
 #ifdef DUMP
-    cudaMemcpyParticleType(cuParticles, particles, cudaMemcpyDeviceToHost);
-    dump(step, particles);
+    gpuErrchk( cudaMemcpy(particle, cuParticles, nParticles*sizeof(ParticleType), cudaMemcpyDeviceToHost) );
+    dump(step, nParticles, particle);
 #endif
   }
-
-
   rate/=(double)(nSteps-skipSteps); 
   dRate=sqrt(dRate/(double)(nSteps-skipSteps)-rate*rate);
   printf("-----------------------------------------------------\n");
@@ -244,8 +170,10 @@ int main(const int argc, const char** argv)
 	 "Average performance:", "", rate, dRate);
   printf("-----------------------------------------------------\n");
   printf("* - warm-up, not included in average\n\n");
-  freeParticleType(particles);
-  cudaFreeParticleType(cuParticles);
+  free(particle);
+  gpuErrchk( cudaFree(cuParticles) );
+
+  return 0;
 }
 
 

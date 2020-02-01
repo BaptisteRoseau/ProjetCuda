@@ -1,8 +1,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h> // drand48
-#include <sys/time.h>
-//#include <cuda.h>
+#include <omp.h>
 
 //#define DUMP
 
@@ -11,13 +10,6 @@ struct ParticleType {
   float *vx, *vy, *vz; 
   unsigned int nParticles;
 };
-
-float get_time(){
-    struct timeval tv;
-    struct timezone tz;
-    gettimeofday(&tv, &tz);
-    return tv.tv_sec;
-}
 
 void cuMoveParticles(struct ParticleType const particles, const float dt) {
   const int nParticles = particles.nParticles;
@@ -128,20 +120,21 @@ int main(const int argc, const char** argv)
   printf("\033[1m%5s %10s %10s %8s\033[0m\n", "Step", "Time, s", "Interact/s", "GFLOP/s"); fflush(stdout);
   for (int step = 1; step <= nSteps; step++) {
 
-    const double tStart = get_time(); // Start timing
+    const double tStart = omp_get_wtime(); // Start timing
     cuMoveParticles(particles, dt);
-    const double tEnd = get_time(); // End timing
+    const double tEnd = omp_get_wtime(); // End timing
+    const double tElapsed = (tEnd - tStart); // seconds
 
     const float HztoInts   = ((float)nParticles)*((float)(nParticles-1)) ;
     const float HztoGFLOPs = 20.0*1e-9*((float)(nParticles))*((float)(nParticles-1));
 
     if (step > skipSteps) { // Collect statistics
-      rate  += HztoGFLOPs/(tEnd - tStart); 
-      dRate += HztoGFLOPs*HztoGFLOPs/((tEnd - tStart)*(tEnd-tStart)); 
+      rate  += HztoGFLOPs/tElapsed; 
+      dRate += HztoGFLOPs*HztoGFLOPs/(tElapsed*tElapsed); 
     }
 
     printf("%5d %10.3e %10.3e %8.1f %s\n", 
-	   step, (tEnd-tStart), HztoInts/(tEnd-tStart), HztoGFLOPs/(tEnd-tStart), (step<=skipSteps?"*":""));
+	   step, tElapsed, HztoInts/tElapsed, HztoGFLOPs/tElapsed, (step<=skipSteps?"*":""));
     fflush(stdout);
 
 #ifdef DUMP
