@@ -1,3 +1,24 @@
+help:
+	@echo "\
+	Compile sources:\n\
+		- make all:           Compiles all sources\n\
+		- make nbody:         Compiles nbody\n\
+		- make nbodyacc:      Compiles nbodyacc\n\
+		- make nbodyomp:      Compiles nbodyomp\n\
+		- make nbodycu:       Compiles nbodycu\n\
+		- make nbodysoa:      Compiles nbodysoa\n\
+		- make nbodysoacu:    Compiles nbodysoacu\n\
+	Run binaries:\n\
+		- make run:           Runs all binaries\n\
+		- make runnbody:      Runs nbody\n\
+		- make runnbodyacc:   Runs nbodyacc\n\
+		- make runnbodyomp:   Runs nbodyomp\n\
+		- make runnbodycu:    Runs nbodycu\n\
+		- make runnbodysoa:   Runs nbodysoa\n\
+		- make runnbodysoacu: Runs nbodysoacu\
+	"
+
+# Alises for all binaries
 all: nbody nbodycu nbodyomp nbodysoa nbodysoacu nbodyacc
 run: runnbody runnbodycu runnbodyomp runnbodysoa runnbodysoacu runnbodyacc
 
@@ -43,9 +64,4 @@ runnbodysoacu: nbodysoacu
 #TODO
 
 clean:
-	rm -f nbody
-	rm -f nbodycu
-	rm -f nbodyacc
-	rm -f nbodyomp
-	rm -f nbodysoa
-	rm -f nbodysoacu
+	rm -f nbody nbodycu nbodyacc nbodyomp nbodysoa nbodysoacu
