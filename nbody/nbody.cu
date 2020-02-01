@@ -8,10 +8,8 @@
 //#define DUMP
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
-{
-   if (code != cudaSuccess) 
-   {
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true){
+   if (code != cudaSuccess) {
     fprintf(stderr,"GPUassert: %s in file %s: %d\n", cudaGetErrorString(code), file, line);
       if (abort) exit(code);
    }
@@ -32,7 +30,7 @@ void cuMoveParticles(const int nParticles, struct ParticleType *particle, const 
       
     // Loop over particles that exert force
     int j;
-    for (j = 0; j < nParticles; j++) { 
+    for (j = 0; j < nParticles; j++) { //We could use reduction here
       // No self interaction
       if (i != j) {
           // Avoid singularity and interaction with self

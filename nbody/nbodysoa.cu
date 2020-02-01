@@ -6,15 +6,11 @@
 
 //#define DUMP
 
-//TODO: Suivre le sujet --"
 //TODO Rapport: expliquer le problème survenu avec https://devtalk.nvidia.com/default/topic/490175/how-to-copy-a-structure-of-arrays-on-gpu-/
-//TODO: Fix time measure
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
-{
-   if (code != cudaSuccess) 
-   {
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true){
+   if (code != cudaSuccess) {
       fprintf(stderr,"GPUassert: %s in file %s: %d\n", cudaGetErrorString(code), file, line);
       if (abort) exit(code);
    }
@@ -27,7 +23,6 @@ struct ParticleType {
 };
 
 void mallocParticleType(ParticleType *p, size_t amount){
-  p->nParticles = amount;
   p->x =  (float*) malloc(amount*sizeof(float));
   p->y =  (float*) malloc(amount*sizeof(float));
   p->z =  (float*) malloc(amount*sizeof(float));
@@ -46,7 +41,6 @@ void freeParticleType(ParticleType *p){
   free(p);
 }
 
-//TODO: Improve this kernel
 __global__
 void cuMoveParticles(struct ParticleType const *particles, const float dt) {
   const int nParticles = particles->nParticles;
@@ -57,7 +51,7 @@ void cuMoveParticles(struct ParticleType const *particles, const float dt) {
     float Fx = 0, Fy = 0, Fz = 0; 
       
     // Loop over particles that exert force
-    for (int j = 0; j < nParticles; j++) { 
+    for (int j = 0; j < nParticles; j++) {  //We could use reduction here
       // No self interaction
       if (i != j) {
           // Avoid singularity and interaction with self
@@ -122,7 +116,6 @@ void dump(int iter, struct ParticleType *particles)
 
 int main(const int argc, const char** argv)
 {
-
   // Problem size and other parameters
   const int nParticles = (argc > 1 ? atoi(argv[1]) : 16384);
   // Duration of test
@@ -169,7 +162,7 @@ int main(const int argc, const char** argv)
   // Copying host structure with device pointers onto device
   struct ParticleType *cuParticles;
   gpuErrchk( cudaMalloc((void**)&cuParticles, sizeof(ParticleType)) );
-  gpuErrchk( cudaMemcpy(cuParticles, particles, sizeof(ParticleType), cudaMemcpyHostToDevice) );
+  gpuErrchk( cudaMemcpy(cuParticles, deviceParticlesPointers, sizeof(ParticleType), cudaMemcpyHostToDevice) );
   
   // Getting max occupancy
   int blockSize, minGridSize, gridSize;
@@ -204,14 +197,12 @@ int main(const int argc, const char** argv)
     fflush(stdout);
 
 #ifdef DUMP
-    gpuErrchk( cudaMemcpy(particles->x, cuParticles->x, nParticles*sizeof(float), cudaMemcpyDeviceToHost) );
-    gpuErrchk( cudaMemcpy(particles->y, cuParticles->y, nParticles*sizeof(float), cudaMemcpyDeviceToHost) );
-    gpuErrchk( cudaMemcpy(particles->z, cuParticles->z, nParticles*sizeof(float), cudaMemcpyDeviceToHost) );
-    gpuErrchk( cudaMemcpy(particles->vx, cuParticles->vx, nParticles*sizeof(float), cudaMemcpyDeviceToHost) );
-    gpuErrchk( cudaMemcpy(particles->vy, cuParticles->vy, nParticles*sizeof(float), cudaMemcpyDeviceToHost) );
-    gpuErrchk( cudaMemcpy(particles->vz, cuParticles->vz, nParticles*sizeof(float), cudaMemcpyDeviceToHost) );
-
-    cudaMemcpyParticleType(particles, cuParticles, cudaMemcpyDeviceToHost);
+    gpuErrchk( cudaMemcpy(particles->x, deviceParticlesPointers->x, nParticles*sizeof(float), cudaMemcpyDeviceToHost) );
+    gpuErrchk( cudaMemcpy(particles->y, deviceParticlesPointers->y, nParticles*sizeof(float), cudaMemcpyDeviceToHost) );
+    gpuErrchk( cudaMemcpy(particles->z, deviceParticlesPointers->z, nParticles*sizeof(float), cudaMemcpyDeviceToHost) );
+    gpuErrchk( cudaMemcpy(particles->vx, deviceParticlesPointers->vx, nParticles*sizeof(float), cudaMemcpyDeviceToHost) );
+    gpuErrchk( cudaMemcpy(particles->vy, deviceParticlesPointers->vy, nParticles*sizeof(float), cudaMemcpyDeviceToHost) );
+    gpuErrchk( cudaMemcpy(particles->vz, deviceParticlesPointers->vz, nParticles*sizeof(float), cudaMemcpyDeviceToHost) );
     dump(step, particles);
 #endif
   }
@@ -227,24 +218,13 @@ int main(const int argc, const char** argv)
 
   // Releasing memory
   freeParticleType(particles);
-  //gpuErrchk( cudaFree(deviceParticlesPointers->x) );
-  //gpuErrchk( cudaFree(deviceParticlesPointers->y) );
-  //gpuErrchk( cudaFree(deviceParticlesPointers->z) );
-  //gpuErrchk( cudaFree(deviceParticlesPointers->vx) );
-  //gpuErrchk( cudaFree(deviceParticlesPointers->vy) );
-  //gpuErrchk( cudaFree(deviceParticlesPointers->vz) );
-  //gpuErrchk( cudaFree(cuParticles) );
-  
-
-
-  cudaFree(deviceParticlesPointers->x);
-  cudaFree(deviceParticlesPointers->y);
-  cudaFree(deviceParticlesPointers->z);
-  cudaFree(deviceParticlesPointers->vx);
-  cudaFree(deviceParticlesPointers->vy);
-  cudaFree(deviceParticlesPointers->vz);
-
-
+  gpuErrchk( cudaFree(deviceParticlesPointers->x) );
+  gpuErrchk( cudaFree(deviceParticlesPointers->y) );
+  gpuErrchk( cudaFree(deviceParticlesPointers->z) );
+  gpuErrchk( cudaFree(deviceParticlesPointers->vx) );
+  gpuErrchk( cudaFree(deviceParticlesPointers->vy) );
+  gpuErrchk( cudaFree(deviceParticlesPointers->vz) );
+  gpuErrchk( cudaFree(cuParticles) );
   free(deviceParticlesPointers);
 
   return 0;
