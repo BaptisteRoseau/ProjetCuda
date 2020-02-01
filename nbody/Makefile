@@ -60,8 +60,5 @@ runnbodysoa: nbodysoa
 runnbodysoacu: nbodysoacu
 	./$<
 
-# Benchmarking
-#TODO
-
 clean:
 	rm -f nbody nbodycu nbodyacc nbodyomp nbodysoa nbodysoacu
