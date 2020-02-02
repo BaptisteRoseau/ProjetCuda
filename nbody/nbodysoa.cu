@@ -6,8 +6,6 @@
 
 //#define DUMP
 
-//TODO Rapport: expliquer le problème survenu avec https://devtalk.nvidia.com/default/topic/490175/how-to-copy-a-structure-of-arrays-on-gpu-/
-
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true){
    if (code != cudaSuccess) {

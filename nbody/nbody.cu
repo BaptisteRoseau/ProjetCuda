@@ -161,6 +161,7 @@ int main(const int argc, const char** argv)
     dump(step, nParticles, particle);
 #endif
   }
+  gpuErrchk( cudaMemcpy(particle, cuParticles, nParticles*sizeof(ParticleType), cudaMemcpyDeviceToHost) );
   rate/=(double)(nSteps-skipSteps); 
   dRate=sqrt(dRate/(double)(nSteps-skipSteps)-rate*rate);
   printf("-----------------------------------------------------\n");

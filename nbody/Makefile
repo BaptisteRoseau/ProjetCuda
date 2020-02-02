@@ -41,6 +41,9 @@ nbodysoa: nbodysoa.c
 nbodysoacu: nbodysoa.cu
 	nvcc $< -o $@ -O3 -Xcompiler -fopenmp -lm 
 
+nbodysoaacc: nbodysoaacc.c
+	pgcc $< -o $@ -g -acc -ta=nvidia -Minfo=accel -O3 -lm
+
 # Execution
 runnbody: nbody
 	./$<
@@ -60,5 +63,8 @@ runnbodysoa: nbodysoa
 runnbodysoacu: nbodysoacu
 	./$<
 
+runnbodysoaacc: nbodysoaacc
+	./$<
+
 clean:
-	rm -f nbody nbodycu nbodyacc nbodyomp nbodysoa nbodysoacu
+	rm -f nbody nbodycu nbodyacc nbodyomp nbodysoa nbodysoacu nbodysoaacc
