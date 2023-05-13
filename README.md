@@ -1,6 +1,4 @@
-Author: Baptiste Roseau
-
-## Nbodies CUDA college projet
+## Nbodies CUDA College Project
 
 ### Requirement
 
@@ -8,7 +6,6 @@ Author: Baptiste Roseau
 - CUDA 9.2 or higher
 - PGI 19.10 or higher
 - Python3 (Numpy and Matplotlib), used for benchmark only.
-
 
 ### Description
 
@@ -22,7 +19,6 @@ The implementations have been made in single-thread, OpenMP, OpenACC and CUDA:
 - nbodyacc.c:  OpenACC version of nbody.c
 - nbodysoa.c:  Structure of Array version of nbody.c
 - nbodysoa.cu: CUDA portage of nbodysoa.c
-
 
 ### How to use
 
